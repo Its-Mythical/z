@@ -80,6 +80,7 @@ $(ISO): $(KERNEL) limine.conf $(LIMINE_DIR)/limine
 # this Makefile by the task that adds the test. Zero tests is a pass.
 HOST_CC     ?= gcc
 HOST_CFLAGS := -std=gnu17 -Wall -Wextra -Werror -O0 -g -Iinclude -Itests/host
+HOST_SRCS_test_format := src/lib/format.c
 HOST_TESTS  := $(sort $(basename $(notdir $(wildcard tests/host/test_*.c))))
 
 test-host: $(HOST_TESTS:%=$(BUILD)/host/%)

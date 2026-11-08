@@ -1,4 +1,6 @@
 #include <limine.h>
+#include <zto2/hal.h>
+#include <zto2/ke.h>
 #include <zto2/types.h>
 
 __attribute__((used, section(".limine_requests_start")))
@@ -52,5 +54,7 @@ void kmain(void)
     }
 
     g_HhdmOffset = g_HhdmRequest.response->offset;
+    HalSerialInit();
+    KdPrint("zto2 booting\n");
     Halt_Forever();
 }
