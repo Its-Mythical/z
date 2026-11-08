@@ -1,0 +1,4 @@
+build/
+*.iso
+tools/limine/
+.superpowers/
