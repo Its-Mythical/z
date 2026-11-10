@@ -15,13 +15,21 @@ NASM ?= nasm
 KCFLAGS := -std=gnu17 -ffreestanding -fno-stack-protector -fno-pic -fno-pie \
            -mno-red-zone -mcmodel=kernel -mno-sse -mno-mmx -mno-80387 \
            -Wall -Wextra -Werror -O2 -g -Iinclude -MMD -MP
+
+# Optional boot fault tests: make iso ZTO2_FAULT_TEST=df defines
+# ZTO2_FAULT_TEST_df (see src/ke/selftest.c). Not set in the default build.
+ZTO2_FAULT_TEST ?=
+ifneq ($(ZTO2_FAULT_TEST),)
+KCFLAGS += -DZTO2_FAULT_TEST_$(ZTO2_FAULT_TEST)=1
+endif
+
 KLDFLAGS := -nostdlib -static -no-pie -z max-page-size=0x1000 -T linker.ld
 
 KSRC_C   := $(shell find src -name '*.c' 2>/dev/null | sort)
 KSRC_ASM := $(shell find src -name '*.asm' 2>/dev/null | sort)
 KOBJ     := $(KSRC_C:%.c=$(BUILD)/obj/%.o) $(KSRC_ASM:%.asm=$(BUILD)/obj/%.o)
 
-.PHONY: all kernel iso test-host test-boot clean limine
+.PHONY: all kernel iso test-host test-boot clean limine FORCE
 all: iso
 
 kernel: $(KERNEL)
@@ -30,7 +38,14 @@ $(KERNEL): $(KOBJ) linker.ld
 	@mkdir -p $(dir $@)
 	$(CC) $(KCFLAGS) $(KLDFLAGS) -o $@ $(KOBJ)
 
-$(BUILD)/obj/%.o: %.c include/limine.h
+# Rewritten only when the compiler flags change, so objects rebuild on a flag switch.
+FLAGSTAMP := $(BUILD)/kcflags.stamp
+$(FLAGSTAMP): FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(KCFLAGS)' | cmp -s - $@ || echo '$(KCFLAGS)' > $@
+FORCE:
+
+$(BUILD)/obj/%.o: %.c include/limine.h $(FLAGSTAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(KCFLAGS) -c $< -o $@
 

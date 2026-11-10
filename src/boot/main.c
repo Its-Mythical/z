@@ -56,5 +56,7 @@ void kmain(void)
     g_HhdmOffset = g_HhdmRequest.response->offset;
     HalSerialInit();
     KdPrint("zto2 booting\n");
+    HalInitCpu();
+    KeSelfTestRun();
     Halt_Forever();
 }
