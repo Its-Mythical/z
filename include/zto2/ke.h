@@ -28,4 +28,34 @@ void KeSelfTestRun(void);
 /* Prints "ZTO2-SELFTEST: FAIL <name>" and halts. */
 __attribute__((noreturn)) void KeSelfTestFail(const char *name);
 
+/* --- Threads and the ready queue (host-compilable; no hardware) ------------ */
+#define KE_PRIORITY_LEVELS 32 /* priorities 0 (idle) to 31 */
+
+#define KT_READY    0
+#define KT_RUNNING  1
+#define KT_FINISHED 2
+
+typedef struct KTHREAD {
+    u64 rsp;              /* saved stack pointer while switched out */
+    struct KTHREAD *next; /* ready-queue link */
+    u8 priority;
+    u8 quantum_left;
+    u8 state;
+    void *stack;
+} KTHREAD;
+
+typedef struct {
+    KTHREAD *head[KE_PRIORITY_LEVELS];
+    KTHREAD *tail[KE_PRIORITY_LEVELS];
+    u32 bitmap; /* bit p set when priority p has a ready thread */
+} KREADY_QUEUE;
+
+void KeRqInit(KREADY_QUEUE *rq);
+/* Appends to the tail of its priority's FIFO. priority must be <= 31. */
+void KeRqInsert(KREADY_QUEUE *rq, KTHREAD *t);
+/* Removes and returns the oldest thread of the highest ready priority; NULL if empty. */
+KTHREAD *KeRqPopHighest(KREADY_QUEUE *rq);
+/* Highest ready priority, or -1 if empty. */
+int KeRqHighestPriority(const KREADY_QUEUE *rq);
+
 #endif
