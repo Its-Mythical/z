@@ -63,6 +63,15 @@ u64 HalTickCount(void);
 /* Signals end-of-interrupt to the local APIC. No-op before HalApicInit. */
 void HalApicEoi(void);
 
+/* Sends an interrupt with the given vector to the calling CPU (ICR self
+ * shorthand, fixed delivery). Test hook; no-op before HalApicInit. */
+void HalApicSelfIpi(u8 vector);
+
+/* True if vector is latched in the local APIC's IRR (requested, not yet
+ * taken) or ISR (taken, no EOI yet). Both are false before HalApicInit. */
+bool HalApicVectorRequested(u8 vector);
+bool HalApicVectorInService(u8 vector);
+
 /* Busy-waits ms milliseconds using PIT channel 2 (independent of the APIC
  * timer). Returns false if the PIT did not respond. */
 bool HalPitDelayMs(u32 ms);

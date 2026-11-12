@@ -19,15 +19,42 @@ static void SelfTestBreakpoint(void)
     KdPrint("ZTO2-SELFTEST: ok breakpoint\n");
 }
 
-/* A software int does not set the APIC in-service bit, so the EOI the
- * dispatcher sends for an unregistered hardware vector is harmless here. The
- * test proves the unregistered and spurious paths return instead of hanging
- * or bugchecking; the dispatcher logs vector 0x41 only once. */
+#define UNHANDLED_VECTOR    0x41
+#define UNHANDLED_WAIT_SPIN 20000000ull
+
+static void WaitUnhandled(bool (*busy)(u8))
+{
+    for (u64 spin = 0; busy(UNHANDLED_VECTOR); spin++) {
+        if (spin >= UNHANDLED_WAIT_SPIN)
+            KeSelfTestFail("unhandled-vector");
+        __asm__ volatile("pause");
+    }
+}
+
+/* Unregistered hardware vectors must be EOI'd, and the spurious vector must
+ * not hang or bugcheck. A software int does not set the in-service bit, so
+ * the EOI is checked with a real (self-IPI) interrupt: while interrupts are
+ * masked the vector latches in the APIC's IRR; after sti it is taken, and
+ * without the dispatcher's EOI its ISR bit would stay set. The dispatcher
+ * logs vector 0x41 only once; 0xFF is silent and gets no EOI. */
 static void SelfTestUnhandledVector(void)
 {
     __asm__ volatile("int $0x41");
     __asm__ volatile("int $0x41");
     __asm__ volatile("int $0xFF");
+
+    __asm__ volatile("cli");
+    HalApicSelfIpi(UNHANDLED_VECTOR);
+    u64 spin = 0;
+    while (!HalApicVectorRequested(UNHANDLED_VECTOR)) {
+        if (++spin >= UNHANDLED_WAIT_SPIN)
+            KeSelfTestFail("unhandled-vector");
+        __asm__ volatile("pause");
+    }
+    __asm__ volatile("sti");
+    WaitUnhandled(HalApicVectorRequested); /* taken */
+    WaitUnhandled(HalApicVectorInService); /* EOI'd */
+    __asm__ volatile("cli");
     KdPrint("ZTO2-SELFTEST: ok unhandled-vector\n");
 }
 

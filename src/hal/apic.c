@@ -9,12 +9,17 @@
 #define APIC_BASE_ADDR_MASK  0x000FFFFFFFFFF000ull
 
 #define LAPIC_REG_EOI        0x0B0
+#define LAPIC_REG_ISR        0x100 /* 8 x 32-bit, 16-byte stride */
+#define LAPIC_REG_IRR        0x200 /* 8 x 32-bit, 16-byte stride */
+#define LAPIC_REG_ICR_LOW    0x300
 #define LAPIC_REG_SVR        0x0F0 /* spurious-interrupt vector register */
 #define LAPIC_REG_LVT_TIMER  0x320
 #define LAPIC_REG_TIMER_INIT 0x380 /* initial count */
 #define LAPIC_REG_TIMER_CUR  0x390 /* current count */
 #define LAPIC_REG_TIMER_DIV  0x3E0 /* divide configuration */
 
+#define LAPIC_ICR_ASSERT     (1u << 14) /* level = assert */
+#define LAPIC_ICR_SELF       (1u << 18) /* destination shorthand 01 = self */
 #define LAPIC_SVR_ENABLE     (1u << 8) /* APIC software enable */
 #define LAPIC_LVT_MASKED     (1u << 16)
 #define LAPIC_LVT_PERIODIC   (1u << 17) /* bits 18:17 = 01 periodic; 00 one-shot */
@@ -192,6 +197,29 @@ void HalApicEoi(void)
 {
     if (g_Lapic != 0)
         LapicWrite(LAPIC_REG_EOI, 0);
+}
+
+void HalApicSelfIpi(u8 vector)
+{
+    if (g_Lapic != 0)
+        LapicWrite(LAPIC_REG_ICR_LOW, LAPIC_ICR_SELF | LAPIC_ICR_ASSERT | vector);
+}
+
+static bool LapicBitSet(u32 base, u8 vector)
+{
+    if (g_Lapic == 0)
+        return false;
+    return (LapicRead(base + 0x10u * (vector >> 5)) >> (vector & 31)) & 1;
+}
+
+bool HalApicVectorRequested(u8 vector)
+{
+    return LapicBitSet(LAPIC_REG_IRR, vector);
+}
+
+bool HalApicVectorInService(u8 vector)
+{
+    return LapicBitSet(LAPIC_REG_ISR, vector);
 }
 
 u64 HalTickCount(void)
