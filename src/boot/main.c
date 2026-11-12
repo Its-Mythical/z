@@ -57,6 +57,7 @@ void kmain(void)
     HalSerialInit();
     KdPrint("zto2 booting\n");
     HalInitCpu();
+    HalApicInit();
     KeSelfTestRun();
     Halt_Forever();
 }

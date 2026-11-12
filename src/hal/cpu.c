@@ -61,6 +61,7 @@ static Tss g_Tss __attribute__((aligned(16)));
 static IdtGate g_Idt[IDT_VECTORS] __attribute__((aligned(16)));
 static u8 g_DoubleFaultStack[DF_STACK_SIZE] __attribute__((aligned(16)));
 static HalIsr g_Handlers[IDT_VECTORS];
+static bool g_UnhandledLogged[IDT_VECTORS];
 
 static void SetTssDescriptor(u64 *slot, u64 base, u32 limit)
 {
@@ -142,5 +143,13 @@ void HalTrapDispatch(TrapFrame *tf)
     if (vector < VECTOR_FIRST_HW)
         KeBugCheck(KE_BUGCHECK_UNEXPECTED_KERNEL_MODE_TRAP, tf->vector, tf->error, tf->rip, 0);
 
-    KdPrint("hal: unhandled interrupt vector %u ignored\n", (unsigned)vector);
+    if (vector == HAL_VECTOR_SPURIOUS)
+        return; /* spurious: no EOI is owed, and nothing is worth logging */
+
+    /* Log once per vector so a stuck source cannot flood the serial port. */
+    if (!g_UnhandledLogged[vector]) {
+        g_UnhandledLogged[vector] = true;
+        KdPrint("hal: unhandled interrupt vector %u ignored\n", (unsigned)vector);
+    }
+    HalApicEoi();
 }
