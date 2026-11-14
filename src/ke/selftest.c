@@ -186,29 +186,51 @@ static void IdleHelper(void *arg)
     g_IdleFlag = true;
 }
 
-/* The main thread drops to priority 0 (the idle thread's) and halts waiting
- * for a flag set by a thread that then finishes. While the helper runs, main
- * waits behind the idle thread in the priority 0 queue, so once the finished
- * helper is gone the scheduler must pick the idle thread, then hand back. */
+/* There is no blocking primitive yet, so "every non-idle thread blocked" is
+ * arranged with priorities instead. Schedule this test forces:
+ *   1. The helper (priority 1) is created while main is still at priority 4, so
+ *      it does not outrank main and KeCreateThread does not yield to it.
+ *   2. With interrupts off, main drops to priority 0 and enters a real
+ *      "cli; check flag; sti; hlt" wait. The flag is false at the first check
+ *      (the helper cannot have run), so the hlt body executes at least once.
+ *   3. A tick preempts main for the ready helper; main is queued at the tail of
+ *      priority 0, behind the idle thread. The helper sets the flag and finishes.
+ *   4. The only ready threads are now idle (head) and main, so the scheduler
+ *      must pick idle (KeIdleRuns rises), and idle's tick hands the CPU back.
+ * What this proves: a finished thread is not re-queued, the pick lands on idle
+ * rather than NULL, idle runs and yields back. What it cannot prove: main is
+ * not truly blocked, so idle is chosen by FIFO order at priority 0, not because
+ * nothing else was runnable. KeIdleRuns is test-only observability. */
+#define IDLE_HELPER_PRIO 1
+
 static void SelfTestIdle(void)
 {
     KTHREAD *me = KeGetCurrentThread();
     u64 idleBefore = KeIdleRuns();
 
-    me->priority = 0;
-    KTHREAD *t = KeCreateThread(IdleHelper, 0, BOOT_PRIORITY);
-    if (t == NULL)
+    KTHREAD *t = KeCreateThread(IdleHelper, 0, IDLE_HELPER_PRIO);
+    if (t == NULL || g_IdleFlag)
         KeSelfTestFail("idle");
 
+    __asm__ volatile("cli" : : : "memory");
+    me->priority = 0;
     u64 start = HalTickCount();
+    u64 hltCount = 0;
     while (!g_IdleFlag) {
-        if (HalTickCount() > start + 300)
+        if (HalTickCount() > start + 300) {
+            __asm__ volatile("sti" : : : "memory");
             KeSelfTestFail("idle");
-        __asm__ volatile("sti; hlt");
+        }
+        hltCount++;
+        __asm__ volatile("sti; hlt; cli" : : : "memory");
     }
+    __asm__ volatile("sti" : : : "memory");
     me->priority = BOOT_PRIORITY;
+
     WaitFinished(t, "idle");
-    if (KeIdleRuns() == idleBefore)
+    u64 idleRuns = KeIdleRuns() - idleBefore;
+    KdPrint("idle: hlt iterations %llu, idle thread runs %llu\n", hltCount, idleRuns);
+    if (hltCount == 0 || idleRuns == 0)
         KeSelfTestFail("idle");
     KdPrint("ZTO2-SELFTEST: ok idle\n");
 }

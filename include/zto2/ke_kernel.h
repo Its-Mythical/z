@@ -76,7 +76,7 @@ void KeYield(void);
  * the reschedule DPC. No-op until KeSchedulerInit has run. */
 void KeOnTimerTick(void);
 
-/* Times the idle thread has entered its sti; hlt loop (observability for self-tests). */
+/* Times the idle thread has entered its sti; hlt loop (TEST-ONLY observability; not for kernel logic). */
 u64 KeIdleRuns(void);
 
 /* switch.asm: saves rbx rbp r12-r15 and RSP into from->rsp, loads to->rsp and
