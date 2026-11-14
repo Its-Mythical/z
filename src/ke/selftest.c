@@ -1,5 +1,6 @@
 #include <zto2/hal.h>
 #include <zto2/ke.h>
+#include <zto2/ke_kernel.h>
 
 static volatile bool g_BreakpointRan;
 
@@ -85,6 +86,133 @@ static void SelfTestTimerTicks(void)
     KdPrint("ZTO2-SELFTEST: ok timer\n");
 }
 
+/* --- Scheduler self-tests ----------------------------------------------------- */
+
+#define BOOT_PRIORITY    4 /* the adopted boot context's priority */
+#define SCHED_WAIT_SPIN  500000000ull
+
+static u8 ThreadState(KTHREAD *t)
+{
+    return __atomic_load_n(&t->state, __ATOMIC_ACQUIRE);
+}
+
+static void NopThread(void *arg)
+{
+    (void)arg;
+}
+
+static void SelfTestCreateBadPriority(void)
+{
+    if (KeCreateThread(NopThread, 0, 32) != NULL ||
+        KeCreateThread(NopThread, 0, 255) != NULL)
+        KeSelfTestFail("create-bad-priority");
+    KdPrint("ZTO2-SELFTEST: ok create-bad-priority\n");
+}
+
+static volatile bool g_PreemptStop;
+static volatile u64 g_PreemptCount[2];
+
+/* Spins without ever yielding; only the timer can take the CPU away. */
+static void PreemptWorker(void *arg)
+{
+    u64 i = (u64)(usize)arg;
+    while (!g_PreemptStop)
+        g_PreemptCount[i]++;
+}
+
+#define PREEMPT_TICKS 50
+
+static void WaitFinished(KTHREAD *t, const char *name)
+{
+    for (u64 spin = 0; ThreadState(t) != KT_FINISHED; spin++) {
+        if (spin >= SCHED_WAIT_SPIN)
+            KeSelfTestFail(name);
+        __asm__ volatile("pause");
+    }
+}
+
+/* Two equal-priority threads that never yield must both make progress. The
+ * main thread shares their priority, so it is preempted too. */
+static void SelfTestPreempt(void)
+{
+    KTHREAD *a = KeCreateThread(PreemptWorker, (void *)0, BOOT_PRIORITY);
+    KTHREAD *b = KeCreateThread(PreemptWorker, (void *)1, BOOT_PRIORITY);
+    if (a == NULL || b == NULL)
+        KeSelfTestFail("preempt");
+
+    u64 start = HalTickCount();
+    for (u64 spin = 0; HalTickCount() < start + PREEMPT_TICKS; spin++) {
+        if (spin >= SCHED_WAIT_SPIN)
+            KeSelfTestFail("preempt");
+        __asm__ volatile("pause");
+    }
+    u64 c0 = g_PreemptCount[0], c1 = g_PreemptCount[1];
+    g_PreemptStop = true;
+    KdPrint("preempt: counters %llu %llu\n", c0, c1);
+    if (c0 == 0 || c1 == 0)
+        KeSelfTestFail("preempt");
+    WaitFinished(a, "preempt");
+    WaitFinished(b, "preempt");
+    KdPrint("ZTO2-SELFTEST: ok preempt\n");
+}
+
+static volatile bool g_PriorityRan;
+
+static void PriorityThread(void *arg)
+{
+    (void)arg;
+    g_PriorityRan = true;
+}
+
+/* A higher-priority thread must run before KeCreateThread returns to us. */
+static void SelfTestPriority(void)
+{
+    KTHREAD *t = KeCreateThread(PriorityThread, 0, 10);
+    if (t == NULL || !g_PriorityRan || ThreadState(t) != KT_FINISHED)
+        KeSelfTestFail("priority");
+    KdPrint("ZTO2-SELFTEST: ok priority\n");
+}
+
+static volatile bool g_IdleFlag;
+
+/* Burns IDLE_HELPER_TICKS, sets the flag and returns (finishes). */
+#define IDLE_HELPER_TICKS 10
+static void IdleHelper(void *arg)
+{
+    (void)arg;
+    u64 start = HalTickCount();
+    for (u64 spin = 0; HalTickCount() < start + IDLE_HELPER_TICKS && spin < SCHED_WAIT_SPIN; spin++)
+        __asm__ volatile("pause");
+    g_IdleFlag = true;
+}
+
+/* The main thread drops to priority 0 (the idle thread's) and halts waiting
+ * for a flag set by a thread that then finishes. While the helper runs, main
+ * waits behind the idle thread in the priority 0 queue, so once the finished
+ * helper is gone the scheduler must pick the idle thread, then hand back. */
+static void SelfTestIdle(void)
+{
+    KTHREAD *me = KeGetCurrentThread();
+    u64 idleBefore = KeIdleRuns();
+
+    me->priority = 0;
+    KTHREAD *t = KeCreateThread(IdleHelper, 0, BOOT_PRIORITY);
+    if (t == NULL)
+        KeSelfTestFail("idle");
+
+    u64 start = HalTickCount();
+    while (!g_IdleFlag) {
+        if (HalTickCount() > start + 300)
+            KeSelfTestFail("idle");
+        __asm__ volatile("sti; hlt");
+    }
+    me->priority = BOOT_PRIORITY;
+    WaitFinished(t, "idle");
+    if (KeIdleRuns() == idleBefore)
+        KeSelfTestFail("idle");
+    KdPrint("ZTO2-SELFTEST: ok idle\n");
+}
+
 #ifdef ZTO2_FAULT_TEST_df
 /* Not part of the default build. Points rsp at unmapped memory and takes a
  * breakpoint: delivering #BP faults (#PF), delivering that #PF faults again,
@@ -102,6 +230,10 @@ void KeSelfTestRun(void)
     SelfTestBreakpoint();
     SelfTestUnhandledVector();
     SelfTestTimerTicks();
+    SelfTestCreateBadPriority();
+    SelfTestPreempt();
+    SelfTestPriority();
+    SelfTestIdle();
 #ifdef ZTO2_FAULT_TEST_df
     SelfTestDoubleFault();
 #endif

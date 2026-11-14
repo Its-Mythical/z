@@ -1,6 +1,7 @@
 #include <limine.h>
 #include <zto2/hal.h>
 #include <zto2/ke.h>
+#include <zto2/ke_kernel.h>
 #include <zto2/types.h>
 
 __attribute__((used, section(".limine_requests_start")))
@@ -58,6 +59,7 @@ void kmain(void)
     KdPrint("zto2 booting\n");
     HalInitCpu();
     HalApicInit();
+    KeSchedulerInit();
     KeSelfTestRun();
     Halt_Forever();
 }

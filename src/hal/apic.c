@@ -1,5 +1,6 @@
 #include <zto2/hal.h>
 #include <zto2/ke.h>
+#include <zto2/ke_kernel.h>
 #include <zto2/portio.h>
 
 /* --- Local APIC (xAPIC, MMIO) --------------------------------------------- */
@@ -164,12 +165,15 @@ static void PicDisable(void)
     HalOutb(PIC2_DATA, 0xFF);
 }
 
-/* Timer interrupt: counts the tick and acknowledges it. The scheduler hooks in here. */
+/* Timer interrupt: counts the tick, acknowledges it, then lets the scheduler
+ * run its DPCs. The EOI comes first so that a context switch inside
+ * KeOnTimerTick cannot leave the tick unacknowledged. */
 static void TimerIsr(TrapFrame *tf)
 {
     (void)tf;
     __atomic_fetch_add(&g_Ticks, 1, __ATOMIC_RELAXED);
     HalApicEoi();
+    KeOnTimerTick();
 }
 
 void HalApicInit(void)
