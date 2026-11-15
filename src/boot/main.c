@@ -2,6 +2,7 @@
 #include <zto2/hal.h>
 #include <zto2/ke.h>
 #include <zto2/ke_kernel.h>
+#include <zto2/portio.h>
 #include <zto2/types.h>
 
 __attribute__((used, section(".limine_requests_start")))
@@ -61,5 +62,9 @@ void kmain(void)
     HalApicInit();
     KeSchedulerInit();
     KeSelfTestRun();
+    KdPrint("ZTO2-SELFTEST: PASS\n");
+    /* QEMU's isa-debug-exit device (iobase 0xF4) exits with status
+     * (value << 1) | 1 = 33. Absent on real hardware, so fall through to a halt. */
+    HalOutb(0xF4, 0x10);
     Halt_Forever();
 }

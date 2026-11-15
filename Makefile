@@ -1,4 +1,4 @@
-# zto2 build. Targets: kernel, iso, test-host, test-boot, clean.
+# zto2 build. Targets: kernel, iso, test-host, test-boot, check, clean, distclean.
 
 LIMINE_BRANCH ?= v9.x-binary
 LIMINE_DIR    := tools/limine
@@ -29,7 +29,7 @@ KSRC_C   := $(shell find src -name '*.c' 2>/dev/null | sort)
 KSRC_ASM := $(shell find src -name '*.asm' 2>/dev/null | sort)
 KOBJ     := $(KSRC_C:%.c=$(BUILD)/obj/%.o) $(KSRC_ASM:%.asm=$(BUILD)/obj/%.o)
 
-.PHONY: all kernel iso test-host test-boot clean limine FORCE
+.PHONY: all kernel iso test-host test-boot check clean distclean limine FORCE
 all: iso
 
 kernel: $(KERNEL)
@@ -115,5 +115,14 @@ $(BUILD)/host/%: tests/host/%.c $$(HOST_SRCS_$$*)
 test-boot:
 	@tests/boot/run_qemu.sh
 
+# Builds the ISO, then runs the host tests and the boot test.
+check: iso
+	$(MAKE) --no-print-directory test-host
+	$(MAKE) --no-print-directory test-boot
+
+# clean keeps the fetched Limine so a rebuild needs no network.
 clean:
 	rm -rf $(BUILD)
+
+distclean: clean
+	rm -rf $(LIMINE_DIR)
