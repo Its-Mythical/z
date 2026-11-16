@@ -1,6 +1,11 @@
-# zto2 build. Targets: kernel, iso, test-host, test-boot, check, clean, distclean.
+# zto2 build. Targets: kernel, iso, test-host, test-runner, test-boot, test-df, check, clean, distclean.
 
-LIMINE_BRANCH ?= v9.x-binary
+# Limine is pinned to one release (tag and the commit it must resolve to), so a
+# fresh clone cannot drift with the upstream branch. Only 'make iso' fetches it,
+# for the bootloader binaries. include/limine.h is committed and authoritative
+# for the kernel build; the ISO build checks it against the pinned release.
+LIMINE_TAG    := v9.6.7-binary
+LIMINE_COMMIT := ee5d29cd0a8034612dcd1df3f00052480db785c5
 LIMINE_DIR    := tools/limine
 LIMINE_REPO   := https://github.com/limine-bootloader/limine.git
 
@@ -61,21 +66,31 @@ limine: $(LIMINE_DIR)/limine
 
 $(LIMINE_DIR)/limine.h:
 	@command -v git >/dev/null 2>&1 || { echo "error: git is required to fetch Limine"; exit 1; }
-	git clone --depth=1 -b $(LIMINE_BRANCH) $(LIMINE_REPO) $(LIMINE_DIR) || \
-	  { echo "error: could not fetch Limine ($(LIMINE_REPO), branch $(LIMINE_BRANCH)); check network access"; \
+	git clone --depth=1 -b $(LIMINE_TAG) $(LIMINE_REPO) $(LIMINE_DIR) || \
+	  { echo "error: could not fetch Limine ($(LIMINE_REPO), tag $(LIMINE_TAG)); check network access"; \
+	    rm -rf $(LIMINE_DIR); exit 1; }
+	@[ "$$(git -C $(LIMINE_DIR) rev-parse HEAD)" = "$(LIMINE_COMMIT)" ] || \
+	  { echo "error: tag $(LIMINE_TAG) no longer resolves to $(LIMINE_COMMIT); refusing the fetched Limine"; \
 	    rm -rf $(LIMINE_DIR); exit 1; }
 
 $(LIMINE_DIR)/limine: $(LIMINE_DIR)/limine.h
 	$(MAKE) -C $(LIMINE_DIR)
 
-include/limine.h: $(LIMINE_DIR)/limine.h
-	cp $< $@
+# Run by the ISO build, the only place tools/limine is used: the checkout must
+# be the pinned commit and its header must equal the committed include/limine.h.
+define LIMINE_VERIFY
+@[ "$$(git -C $(LIMINE_DIR) rev-parse HEAD 2>/dev/null)" = "$(LIMINE_COMMIT)" ] || \
+  { echo "error: $(LIMINE_DIR) is not Limine $(LIMINE_TAG) ($(LIMINE_COMMIT)); run 'make distclean' and rebuild"; exit 1; }
+@cmp -s include/limine.h $(LIMINE_DIR)/limine.h || \
+  { echo "error: include/limine.h differs from $(LIMINE_DIR)/limine.h ($(LIMINE_TAG)); update the committed header to match the pinned Limine"; exit 1; }
+endef
 
 # --- ISO ------------------------------------------------------------------
 iso: $(ISO)
 
 $(ISO): $(KERNEL) limine.conf $(LIMINE_DIR)/limine
 	@command -v xorriso >/dev/null 2>&1 || { echo "error: xorriso not found; install xorriso (see README.md)"; exit 1; }
+	$(LIMINE_VERIFY)
 	rm -rf $(ISODIR)
 	mkdir -p $(ISODIR)/boot/limine $(ISODIR)/EFI/BOOT
 	cp $(KERNEL) $(ISODIR)/boot/zto2.elf
