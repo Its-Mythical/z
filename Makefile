@@ -17,10 +17,11 @@ KCFLAGS := -std=gnu17 -ffreestanding -fno-stack-protector -fno-pic -fno-pie \
            -Wall -Wextra -Werror -O2 -g -Iinclude -MMD -MP
 
 # Optional boot fault tests: make iso ZTO2_FAULT_TEST=df defines
-# ZTO2_FAULT_TEST_df (see src/ke/selftest.c). Not set in the default build.
+# ZTO2_FAULT_TEST_df (see src/ke/selftest.c) and ZTO2_FAULT_TEST, which makes
+# KeBugCheck exit QEMU (src/ke/bugcheck.c). Not set in the default build.
 ZTO2_FAULT_TEST ?=
 ifneq ($(ZTO2_FAULT_TEST),)
-KCFLAGS += -DZTO2_FAULT_TEST_$(ZTO2_FAULT_TEST)=1
+KCFLAGS += -DZTO2_FAULT_TEST_$(ZTO2_FAULT_TEST)=1 -DZTO2_FAULT_TEST=1
 endif
 
 KLDFLAGS := -nostdlib -static -no-pie -z max-page-size=0x1000 -T linker.ld
@@ -29,7 +30,7 @@ KSRC_C   := $(shell find src -name '*.c' 2>/dev/null | sort)
 KSRC_ASM := $(shell find src -name '*.asm' 2>/dev/null | sort)
 KOBJ     := $(KSRC_C:%.c=$(BUILD)/obj/%.o) $(KSRC_ASM:%.asm=$(BUILD)/obj/%.o)
 
-.PHONY: all kernel iso test-host test-runner test-boot check clean distclean limine FORCE
+.PHONY: all kernel iso test-host test-runner test-boot test-df check clean distclean limine FORCE
 all: iso
 
 kernel: $(KERNEL)
@@ -121,11 +122,23 @@ test-boot:
 test-runner:
 	@tests/boot/test_runner.sh
 
-# Builds the ISO, then runs the host tests, the runner self-test and the boot test.
+# Double-fault regression: builds the fault ISO (ZTO2_FAULT_TEST=df), expects a
+# bugcheck 0x7f with first parameter 8 (#DF reaching KeBugCheck on the IST1
+# stack), then rebuilds the normal ISO whatever the outcome.
+test-df:
+	@rc=0; \
+	$(MAKE) --no-print-directory iso ZTO2_FAULT_TEST=df && \
+	    ZTO2_EXPECT='BUGCHECK 0x7f \(0x8,' tests/boot/run_qemu.sh || rc=$$?; \
+	$(MAKE) --no-print-directory iso || { [ $$rc -ne 0 ] || rc=$$?; }; \
+	exit $$rc
+
+# Builds the ISO, then runs the host tests, the runner self-test, the boot test
+# and the double-fault test (which leaves the normal ISO in place).
 check: iso
 	$(MAKE) --no-print-directory test-host
 	$(MAKE) --no-print-directory test-runner
 	$(MAKE) --no-print-directory test-boot
+	$(MAKE) --no-print-directory test-df
 
 # clean keeps the fetched Limine so a rebuild needs no network.
 clean:
