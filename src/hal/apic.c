@@ -5,6 +5,8 @@
 
 /* --- Local APIC (xAPIC, MMIO) --------------------------------------------- */
 #define MSR_APIC_BASE        0x1B
+#define MSR_EFER             0xC0000080
+#define EFER_NXE             (1ull << 11)
 #define APIC_BASE_EXTD       (1ull << 10) /* x2APIC mode */
 #define APIC_BASE_ENABLE     (1ull << 11) /* APIC global enable */
 #define APIC_BASE_ADDR_MASK  0x000FFFFFFFFFF000ull
@@ -136,7 +138,10 @@ static bool MapMmioPage(u64 phys)
         }
         tbl = TableAt(*e & PTE_ADDR);
     }
-    tbl[(virt >> 12) & (PT_ENTRIES - 1)] = (phys & PTE_ADDR) | PTE_P | PTE_RW | PTE_PWT | PTE_PCD | PTE_NX;
+    /* Bit 63 is reserved (a #PF on use) unless the bootloader enabled NX in
+     * EFER; a CPU without NX never has it set. */
+    u64 nx = (ReadMsr(MSR_EFER) & EFER_NXE) ? PTE_NX : 0;
+    tbl[(virt >> 12) & (PT_ENTRIES - 1)] = (phys & PTE_ADDR) | PTE_P | PTE_RW | PTE_PWT | PTE_PCD | nx;
     __asm__ volatile("invlpg (%0)" : : "r"(virt) : "memory");
     return true;
 }
