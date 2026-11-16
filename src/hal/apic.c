@@ -11,6 +11,7 @@
 #define APIC_BASE_ENABLE     (1ull << 11) /* APIC global enable */
 #define APIC_BASE_ADDR_MASK  0x000FFFFFFFFFF000ull
 
+#define LAPIC_REG_TPR        0x080 /* task priority */
 #define LAPIC_REG_EOI        0x0B0
 #define LAPIC_REG_ISR        0x100 /* 8 x 32-bit, 16-byte stride */
 #define LAPIC_REG_IRR        0x200 /* 8 x 32-bit, 16-byte stride */
@@ -196,6 +197,7 @@ void HalApicInit(void)
         return;
     }
     g_Lapic = (volatile u32 *)(usize)(lapicPhys + g_HhdmOffset);
+    LapicWrite(LAPIC_REG_TPR, 0); /* firmware may leave a TPR that masks vector 0x40 */
     LapicWrite(LAPIC_REG_SVR, LAPIC_SVR_ENABLE | HAL_VECTOR_SPURIOUS);
 
     if (!HalRegisterInterrupt(HAL_VECTOR_TIMER, TimerIsr))

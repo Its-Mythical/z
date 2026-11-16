@@ -48,7 +48,8 @@ extern u64 g_HhdmOffset;
 #define HAL_VECTOR_SPURIOUS 0xFF
 
 /* Masks and disables both legacy 8259 PICs, then enables the boot CPU's
- * local APIC (xAPIC MMIO via the HHDM) with spurious vector 0xFF. Requires
+ * local APIC (xAPIC MMIO, mapped uncached by apic.c itself) with spurious
+ * vector 0xFF and the task priority cleared. Requires
  * HalInitCpu. Interrupts stay disabled (IF is not touched). */
 void HalApicInit(void);
 
