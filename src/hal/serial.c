@@ -11,8 +11,13 @@
 #define LSR_THR_EMPTY    0x20
 #define SERIAL_MAX_POLLS 100000
 
+/* Set when a byte times out: a dead or absent UART would otherwise cost
+ * SERIAL_MAX_POLLS port reads for every later byte. */
+static bool g_SerialDead;
+
 void HalSerialInit(void)
 {
+    g_SerialDead = false;
     HalOutb(COM1_BASE + UART_IER, 0x00); /* no interrupts */
     HalOutb(COM1_BASE + UART_LCR, 0x80); /* DLAB on */
     HalOutb(COM1_BASE + UART_DATA, 0x01); /* divisor 1 = 115200 baud (low) */
@@ -24,13 +29,14 @@ void HalSerialInit(void)
 
 void HalSerialWrite(const char *s, usize n)
 {
-    for (usize i = 0; i < n; i++) {
-        for (unsigned polls = 0; polls < SERIAL_MAX_POLLS; polls++) {
-            if (HalInb(COM1_BASE + UART_LSR) & LSR_THR_EMPTY) {
-                HalOutb(COM1_BASE + UART_DATA, (u8)s[i]);
-                break;
+    for (usize i = 0; i < n && !g_SerialDead; i++) {
+        unsigned polls = 0;
+        while (!(HalInb(COM1_BASE + UART_LSR) & LSR_THR_EMPTY)) {
+            if (++polls >= SERIAL_MAX_POLLS) {
+                g_SerialDead = true; /* drop this byte and all later ones */
+                return;
             }
         }
-        /* Timed out: drop the byte so a missing UART cannot hang boot. */
+        HalOutb(COM1_BASE + UART_DATA, (u8)s[i]);
     }
 }
