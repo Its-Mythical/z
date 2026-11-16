@@ -1,0 +1,9 @@
+# One in-kernel self-test per line, as printed by src/ke/selftest.c in
+# "ZTO2-SELFTEST: ok <name>". The default boot test requires every one.
+breakpoint
+unhandled-vector
+timer
+create-bad-priority
+preempt
+priority
+idle

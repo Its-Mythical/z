@@ -29,7 +29,7 @@ KSRC_C   := $(shell find src -name '*.c' 2>/dev/null | sort)
 KSRC_ASM := $(shell find src -name '*.asm' 2>/dev/null | sort)
 KOBJ     := $(KSRC_C:%.c=$(BUILD)/obj/%.o) $(KSRC_ASM:%.asm=$(BUILD)/obj/%.o)
 
-.PHONY: all kernel iso test-host test-boot check clean distclean limine FORCE
+.PHONY: all kernel iso test-host test-runner test-boot check clean distclean limine FORCE
 all: iso
 
 kernel: $(KERNEL)
@@ -110,14 +110,21 @@ $(BUILD)/host/%: tests/host/%.c $$(HOST_SRCS_$$*)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(HOST_CFLAGS) $^ -o $@
 
-# Boots build/zto2.iso (does not build it); override ZTO2_EXPECT to match a
-# different serial line. Exit 77 means QEMU is unavailable (skipped).
+# Boots build/zto2.iso (does not build it) and requires the PASS marker plus an
+# 'ok' line for every name in tests/boot/expected_selftests.txt; overriding
+# ZTO2_EXPECT (a regex) matches a different serial line instead. Exit 77 means
+# QEMU is unavailable (skipped).
 test-boot:
 	@tests/boot/run_qemu.sh
 
-# Builds the ISO, then runs the host tests and the boot test.
+# Self-test of the boot-test runner against a stub QEMU (needs no QEMU or ISO).
+test-runner:
+	@tests/boot/test_runner.sh
+
+# Builds the ISO, then runs the host tests, the runner self-test and the boot test.
 check: iso
 	$(MAKE) --no-print-directory test-host
+	$(MAKE) --no-print-directory test-runner
 	$(MAKE) --no-print-directory test-boot
 
 # clean keeps the fetched Limine so a rebuild needs no network.
